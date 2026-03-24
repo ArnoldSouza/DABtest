@@ -8,9 +8,13 @@
 # COMMAND ----------
 external_rambase_catalog_name = dbutils.widgets.get("external_rambase_catalog_name")
 view_based_rambase_catalog_name = dbutils.widgets.get("view_based_rambase_catalog_name")
+uc_catalog = dbutils.widgets.get("uc_catalog")
+uc_schema = dbutils.widgets.get("uc_schema")
 
 print(
-    f"External Rambase Catalog Name: {external_rambase_catalog_name}\nView-Based Rambase Catalog Name: {view_based_rambase_catalog_name}"
+    f"External Rambase Catalog Name: {external_rambase_catalog_name}\n"
+    f"View-Based Rambase Catalog Name: {view_based_rambase_catalog_name}\n"
+    f"UC Catalog: {uc_catalog}\nUC Schema: {uc_schema}"
 )
 
 # COMMAND ----------
@@ -20,7 +24,7 @@ print(
 
 # COMMAND ----------
 create_table_sql = f"""
-CREATE TABLE IF NOT EXISTS {view_based_rambase_catalog_name}.rambase.competence_monthly (
+CREATE TABLE IF NOT EXISTS {uc_catalog}.{uc_schema}.competence_monthly (
   id CHAR(36), role_id CHAR(36), requirement_id CHAR(36), user_id CHAR(36), department_id
     CHAR(36), site_id STRING, document_id CHAR(36), reading_status STRING, cosigner_id CHAR(36),
     cosigning_comment STRING, cosigned_at STRING, expire_at STRING, training_status STRING,
@@ -36,7 +40,7 @@ spark.sql(create_table_sql)
 
 # COMMAND ----------
 merge_sql = f"""
-MERGE INTO {view_based_rambase_catalog_name}.rambase.competence_monthly AS t
+MERGE INTO {uc_catalog}.{uc_schema}.competence_monthly AS t
 USING (
     SELECT
         id,

@@ -1,15 +1,12 @@
 targets:
   prod:
     mode: production
-    run_as:
-      service_principal_name: 2d924d80-a290-4783-8e1e-e78a9a20ac7a
     workspace:
-      host: https://adb-2717089738692205.5.azuredatabricks.net
-
+      host: https://adb-8539366266805205.5.azuredatabricks.net
     variables:
       external_rambase_catalog_name:
         description: "Name for the catalog of the external rambase database (default test environment value)"
-        default: "alme_rambase_sql_prd"
+        default: "prod_gbs_gpdi_sqlserver_rambase"
       view_based_rambase_catalog_name:
         description: "Name for the catalog of the view-based external rambase database (default test environment value)"
-        default:  "alme_safety_ambs_prd"
+        default:  "replace_with_view_based_rambase_catalog"
