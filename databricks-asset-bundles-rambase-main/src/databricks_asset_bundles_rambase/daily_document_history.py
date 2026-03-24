@@ -8,9 +8,13 @@
 # COMMAND ----------
 external_rambase_catalog_name = dbutils.widgets.get("external_rambase_catalog_name")
 view_based_rambase_catalog_name = dbutils.widgets.get("view_based_rambase_catalog_name")
+uc_catalog = dbutils.widgets.get("uc_catalog")
+uc_schema = dbutils.widgets.get("uc_schema")
 
 print(
-    f"External Rambase Catalog Name: {external_rambase_catalog_name}\nView-Based Rambase Catalog Name: {view_based_rambase_catalog_name}"
+    f"External Rambase Catalog Name: {external_rambase_catalog_name}\n"
+    f"View-Based Rambase Catalog Name: {view_based_rambase_catalog_name}\n"
+    f"UC Catalog: {uc_catalog}\nUC Schema: {uc_schema}"
 )
 
 # COMMAND ----------
@@ -24,7 +28,7 @@ print(
 
 # COMMAND ----------
 create_table_sql = f"""
-CREATE TABLE IF NOT EXISTS {view_based_rambase_catalog_name}.rambase.documents_daily (
+CREATE TABLE IF NOT EXISTS {uc_catalog}.{uc_schema}.documents_daily (
   folder_name STRING, title STRING, status STRING, document_life_cycle_status STRING, id INT,
     document_id CHAR(36), type STRING, version INT, author STRING, verifier STRING, approver STRING,
     created_date STRING, sent_for_verification STRING, verified_date STRING, sent_for_approval
@@ -42,7 +46,7 @@ spark.sql(create_table_sql)
 
 # COMMAND ----------
 merge_sql = f"""
-MERGE INTO {view_based_rambase_catalog_name}.rambase.documents_daily AS t
+MERGE INTO {uc_catalog}.{uc_schema}.documents_daily AS t
 USING (
   SELECT
     folder_name,
@@ -75,7 +79,7 @@ USING (
     current_date() as `date`,
     current_timestamp() as last_updated
   FROM
-    {view_based_rambase_catalog_name}.rambase.v_documents
+    {uc_catalog}.{uc_schema}.v_documents
 ) AS s
 ON t.document_id = s.document_id and t.date = s.date
 WHEN NOT MATCHED THEN

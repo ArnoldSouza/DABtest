@@ -12,9 +12,9 @@ resources:
 
       email_notifications:
         on_failure:
-          - ola.flotve@hydro.com
+          - matyas.karoly@hydro.com
       tags:
-        project: "rambase_to_ceres"
+        project: "rambase_to_gpdi"
         X_CostObject: ${var.cost_object}
         x_JobId: "create_monthly_rambase_data"
       tasks:
@@ -24,6 +24,8 @@ resources:
             base_parameters:
               external_rambase_catalog_name: ${var.external_rambase_catalog_name}
               view_based_rambase_catalog_name: ${var.view_based_rambase_catalog_name}
+              uc_catalog: ${var.uc_catalog}
+              uc_schema: ${var.uc_schema}
       # When cluster is not defined, then datbricks uses serverless as default.
 
     daily_rambase_ingestion:
@@ -35,9 +37,9 @@ resources:
 
       email_notifications:
         on_failure:
-          - ola.flotve@hydro.com
+          - matyas.karoly@hydro.com
       tags:
-        project: "rambase_to_ceres"
+        project: "rambase_to_gpdi"
         X_CostObject: ${var.cost_object}
         x_JobId: "create_daily_rambase_data"
       tasks:
@@ -47,3 +49,5 @@ resources:
             base_parameters:
               external_rambase_catalog_name: ${var.external_rambase_catalog_name}
               view_based_rambase_catalog_name: ${var.view_based_rambase_catalog_name}
+              uc_catalog: ${var.uc_catalog}
+              uc_schema: ${var.uc_schema}

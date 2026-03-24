@@ -7,11 +7,11 @@ targets:
     mode: development
     default: true
     workspace:
-      host: https://adb-5964962121802975.15.azuredatabricks.net
+      host: https://adb-8539366266805205.5.azuredatabricks.net
     variables:
       external_rambase_catalog_name:
         description: "Name for the catalog of the external rambase database (default test environment value)"
-        default: "alme_rambase_sql_tst"
+        default: "prod_gbs_gpdi_sqlserver_rambase"
       view_based_rambase_catalog_name:
         description: "Name for the catalog of the view-based external rambase database (default test environment value)"
-        default:  "alme_safety_ambs_tst"
+        default:  "replace_with_view_based_rambase_catalog"
