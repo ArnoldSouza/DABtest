@@ -1,0 +1,49 @@
+bundle:
+  name: rambase_historical_data
+
+resources:
+  jobs:
+    monthly_rambase_ingestion:
+      name: monthly_rambase_ingestion
+
+      schedule:
+        quartz_cron_expression: "0 0 6 1 * ?" # At 06:00 AM, on day 1 of the month
+        timezone_id: Europe/Amsterdam
+
+      email_notifications:
+        on_failure:
+          - ola.flotve@hydro.com
+      tags:
+        project: "rambase_to_ceres"
+        X_CostObject: ${var.cost_object}
+        x_JobId: "create_monthly_rambase_data"
+      tasks:
+        - task_key: monthly_competence
+          notebook_task:
+            notebook_path: ../src/databricks_asset_bundles_rambase/monthly_competence_history.py
+            base_parameters:
+              external_rambase_catalog_name: ${var.external_rambase_catalog_name}
+              view_based_rambase_catalog_name: ${var.view_based_rambase_catalog_name}
+      # When cluster is not defined, then datbricks uses serverless as default.
+
+    daily_rambase_ingestion:
+      name: daily_rambase_ingestion
+
+      schedule:
+        quartz_cron_expression: "0 0 7 ? * *"
+        timezone_id: Europe/Amsterdam
+
+      email_notifications:
+        on_failure:
+          - ola.flotve@hydro.com
+      tags:
+        project: "rambase_to_ceres"
+        X_CostObject: ${var.cost_object}
+        x_JobId: "create_daily_rambase_data"
+      tasks:
+        - task_key: daily_documents
+          notebook_task:
+            notebook_path: ../src/databricks_asset_bundles_rambase/daily_document_history.py
+            base_parameters:
+              external_rambase_catalog_name: ${var.external_rambase_catalog_name}
+              view_based_rambase_catalog_name: ${var.view_based_rambase_catalog_name}

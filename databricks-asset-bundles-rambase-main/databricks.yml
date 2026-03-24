@@ -1,0 +1,24 @@
+# This is a Databricks asset bundle definition for demo.
+# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+bundle:
+  name: rambase_daily_data
+
+artifacts:
+  default:
+    type: whl
+    build: poetry build
+    path: .
+
+include:
+  - resources/*.yml
+
+variables:
+  cost_object:
+    description: "Cost object for rambase development and implementation"
+    default: "TA-042256-01-01"
+  external_rambase_catalog_name:
+    description: "Name for the catalog of the external rambase database (default test environment value)"
+    default: "alme_rambase_sql_tst"
+  view_based_rambase_catalog_name:
+    description: "Name for the catalog of the view-based external rambase database (default test environment value)"
+    default: "alme_safety_ambs_tst"

@@ -1,0 +1,231 @@
+name: "Build and release"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }} # each branch has its own concurrency group, preventing concurrent deployments from different branches
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      skip-tests:
+        description: 'Skip unit tests'
+        required: false
+        default: 'false'
+
+# allows the jobs to request a OIDC JWT token
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+env:
+  PYTHON_VERSION: "3.10.4"
+  POETRY_VERSION: "2.0.1"
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release-please.outputs.release_created }}
+      tag_name: ${{ steps.release-please.outputs.tag_name }}
+    steps:
+      - name: 🚀 Release Please
+        id: release-please
+        uses: googleapis/release-please-action@v4
+
+  build-test:
+    name: Build test
+    needs: release-please
+    runs-on: ubuntu-latest
+    if: ${{ !needs.release-please.outputs.release_created && (github.event_name != 'pull_request' || github.event_name == 'pull_request')}}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          virtualenvs-path: .venv
+          installer-parallel: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Show dependencies
+        run: poetry show --tree
+
+      - uses: databricks/setup-cli@main
+
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=$PYTHONPATH:$(pwd)/src" >> $GITHUB_ENV
+
+      - name: Run Black
+        run: poetry run black src --check
+
+      - name: Run Pylint
+        run: poetry run pylint src
+
+      - name: Run MyPy
+        run: poetry run mypy src
+
+      #- name: Run unit tests
+      #  if: ${{ github.event.inputs.skip-tests != 'true' }}
+      #  run: poetry run pytest tests/unit
+
+#      - name: Run integration tests
+#        if: ${{ github.event.inputs.skip-tests != 'true' }}
+#        run: poetry run pytest tests/integration/services
+
+
+  deploy-test:
+    name: Deploy test
+    needs: build-test
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
+    environment: DBW-ALME-SHARED-TST-01 #used for getting environment variables
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          virtualenvs-path: .venv
+          installer-parallel: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - uses: databricks/setup-cli@main
+
+      - run: databricks bundle deploy -t test
+        working-directory: .
+        env:
+          DATABRICKS_BUNDLE_ENV: test # used by databricks.yml to specify target environment
+          DATABRICKS_HOST: https://adb-5964962121802975.15.azuredatabricks.net/
+          DATABRICKS_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_SHARED_TST }}
+          DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_ALME_IT_TST_01_SHARED_SVC_DEVOPS_OAUTH_SECRET }}
+
+  build-prod:
+    name: Build prod
+    needs: release-please
+    runs-on: ubuntu-latest
+    if: ${{ needs.release-please.outputs.release_created }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          virtualenvs-path: .venv
+          installer-parallel: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - uses: databricks/setup-cli@main
+
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=$PYTHONPATH:$(pwd)/src" >> $GITHUB_ENV
+
+      #- name: Run unit tests
+      #  if: ${{ github.event.inputs.skip-tests != 'true' }}
+      #  run: poetry run pytest tests/unit
+
+
+  deploy-prod:
+    name: Deploy prod
+    needs: build-prod
+    runs-on: ubuntu-latest
+    environment: DBW-ALME-SHARED-PRD-01 #used for getting environment variables
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          virtualenvs-path: .venv
+          installer-parallel: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - uses: databricks/setup-cli@main
+
+      - run: databricks bundle deploy -t prod
+        working-directory: .
+        env:
+          DATABRICKS_BUNDLE_ENV: prod # used by databricks.yml to specify target environment
+          DATABRICKS_HOST: https://adb-2717089738692205.5.azuredatabricks.net/
+          DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+          DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}

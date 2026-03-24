@@ -1,0 +1,673 @@
+#-----------------------------------------------
+# Rambase Quality Managment - rambase Views
+#-----------------------------------------------
+- table_name: v_departments
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for department information
+  view_definition: >
+    select
+      id,
+      site_id,
+      parent_id,
+      name,
+      type,
+      created_at,
+      updated_at,
+      deleted_at
+    FROM
+      alme_rambase_sql_prd.dbo.cmpt_departments
+
+- table_name: v_company_branches
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for company branch information
+  view_definition: >
+    select
+      *
+    FROM
+      alme_rambase_sql_prd.dbo.cmpt_company_branches
+
+- table_name: v_user_company_branch_connection
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for user-company branch connections
+  view_definition: >
+    select
+      *
+    FROM
+      alme_rambase_sql_prd.dbo.cmpt_user_company_branch_connection
+
+- table_name: v_folders
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for folder information
+  view_definition: >
+    SELECT
+      id,
+      site_id,
+      parent_id,
+      uuid,
+      name,
+      lvl
+    from alme_rambase_sql_prd.dbo.folders
+
+- table_name: v_competence
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for competence information on user roles
+  view_definition: >
+    SELECT
+      *
+    FROM alme_rambase_sql_prd.dbo.competence
+
+- table_name: v_documents
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for document information
+  view_definition: >
+     WITH base_join AS (
+      SELECT
+        idv.id AS document_version_id,
+        idv.document_id,
+        idv.author_id,
+        idv.approver_id,
+        idv.verifier_id,
+        idv.version_number,
+        idv.approved_at,
+        idv.verified_at,
+        idv.changelog,
+        idv.valid_to,
+        idv.to_verification_at,
+        idv.created_at,
+        idv.to_approve_at,
+        idv.substitute_author_id,
+        idv.substitute_approver_id,
+        idv.substitute_verifier_id,
+        idv.type,
+        dl.id,
+        dl.folder_uuid,
+        dl.name,
+        dl.numeric_identifier,
+        dl.site_id,
+        dl.status_status,
+        dl.last_approved_version_id,
+        dl.last_version_id
+      FROM
+        alme_rambase_sql_prd.dbo.items_documents_versions AS idv
+          JOIN alme_rambase_sql_prd.dbo.document_list AS dl
+            ON idv.document_id = dl.id
+      ),
+      settings_join AS (
+      SELECT
+        bj.*,
+        CASE
+          WHEN CAST(get_json_object(s.values_data, '$[0]') AS INT) = -1 then 0
+          else CAST(get_json_object(s.values_data, '$[0]') AS INT)
+        END AS default_revision_noti_month_numb
+      FROM
+        base_join bj
+          LEFT JOIN alme_rambase_sql_prd.dbo.settings s
+            ON bj.site_id = s.site_id
+            and s.id LIKE '%document_default_revision_notification%'
+      ),
+      archiver_join AS (
+      SELECT
+        sj.*,
+        ldmv.archived_by_id
+      FROM
+        settings_join sj
+          LEFT JOIN alme_rambase_sql_prd.dbo.list_documents_by_maintainer_view ldmv
+            ON sj.document_version_id = ldmv.version_id
+      ),
+      feedback_join AS (
+      SELECT
+        aj.*,
+        c.user_id as user_id_comment,
+        c.message AS feedback,
+        c.created_at as feedback_created_at
+      FROM
+        archiver_join aj
+          LEFT JOIN alme_rambase_sql_prd.dbo.comments c
+            ON aj.document_version_id = c.commentable_id
+      ),
+      user_join AS (
+      SELECT
+        fj.*,
+        CONCAT(u1.first_name, ' ', u1.last_name) AS author,
+        CONCAT(u2.first_name, ' ', u2.last_name) AS approver,
+        CONCAT(u3.first_name, ' ', u3.last_name) AS verifier,
+        CONCAT(u4.first_name, ' ', u4.last_name) AS archiver,
+        CONCAT(u5.first_name, ' ', u5.last_name) AS feedbacker,
+        CONCAT(u6.first_name, ' ', u6.last_name) AS substitute_author,
+        CONCAT(u7.first_name, ' ', u7.last_name) AS substitute_approver,
+        CONCAT(u8.first_name, ' ', u8.last_name) AS substitute_verifier
+      FROM
+        feedback_join fj
+          LEFT JOIN alme_rambase_sql_prd.dbo.users u1
+            ON fj.author_id = u1.id
+          LEFT JOIN alme_rambase_sql_prd.dbo.users u2
+            ON fj.approver_id = u2.id
+          LEFT JOIN alme_rambase_sql_prd.dbo.users u3
+            ON fj.verifier_id = u3.id
+          LEFT JOIN alme_rambase_sql_prd.dbo.users u4
+            ON fj.archived_by_id = u4.id
+          LEFT JOIN alme_rambase_sql_prd.dbo.users u5
+            ON fj.user_id_comment = u5.id
+          LEFT JOIN alme_rambase_sql_prd.dbo.users u6
+            ON fj.substitute_author_id = u6.id
+          LEFT JOIN alme_rambase_sql_prd.dbo.users u7
+            ON fj.substitute_approver_id = u7.id
+          LEFT JOIN alme_rambase_sql_prd.dbo.users u8
+            ON fj.substitute_verifier_id = u8.id
+      ),
+      folder_join AS (
+      SELECT
+        uj.*,
+        f.name AS folder_name,
+        f.id as folder_id
+      FROM
+        user_join uj
+          LEFT JOIN alme_rambase_sql_prd.dbo.folders f
+            ON uj.folder_uuid = f.uuid
+      ),
+      exploded AS (
+      SELECT
+        *,
+        explode(from_json(feedback, 'STRUCT<ops: ARRAY<STRUCT<insert: STRING>>>').ops) AS op
+      FROM
+        folder_join
+      ),
+      grouped AS (
+      SELECT
+        document_version_id,
+        concat(
+          feedbacker, '\n', date_format(feedback_created_at, 'yyyy-MM-dd HH:mm'), '\n', op.insert
+        ) AS feedback_entry
+      FROM
+        exploded
+      ORDER BY
+        feedback_created_at DESC
+      ),
+      final_feedback AS (
+      SELECT
+        document_version_id,
+        concat_ws('\n\n', collect_list(feedback_entry)) AS feedback_combined
+      FROM
+        grouped
+      GROUP BY
+        document_version_id
+      ),
+      restructure AS (
+      SELECT DISTINCT
+        fj.folder_name,
+        fj.name AS title,
+        fj.document_id,
+        fj.type,
+        NULL AS status,
+        fj.numeric_identifier AS id,
+        fj.version_number AS version,
+        fj.author,
+        fj.verifier,
+        fj.approver,
+        date_format(fj.created_at, 'yyyy-MM-dd') AS created_date,
+        date_format(fj.to_verification_at, 'yyyy-MM-dd') AS sent_for_verification,
+        date_format(fj.verified_at, 'yyyy-MM-dd') AS verified_date,
+        date_format(fj.to_approve_at, 'yyyy-MM-dd') AS sent_for_approval,
+        date_format(fj.approved_at, 'yyyy-MM-dd') AS approved,
+        date_format(fj.valid_to, 'yyyy-MM-dd') AS next_revision_before,
+        fj.archiver,
+        CASE
+          WHEN fj.archiver IS NOT NULL THEN TRUE
+          ELSE FALSE
+        END AS archived,
+        fj.changelog,
+        fj.feedback_combined AS feedback,
+        fj.last_approved_version_id,
+        fj.status_status as processing_status,
+        fj.default_revision_noti_month_numb,
+        CASE
+          WHEN fj.last_approved_version_id IS NULL THEN 'grey'
+          WHEN fj.valid_to IS NULL THEN 'green'
+          WHEN current_timestamp() > fj.valid_to THEN 'red'
+          WHEN
+            current_timestamp() > add_months(fj.valid_to, -fj.default_revision_noti_month_numb)
+          THEN
+            'yellow'
+          ELSE 'green'
+        END AS document_life_cycle_status,
+        fj.folder_id,
+        fj.site_id,
+        fj.substitute_author,
+        fj.substitute_approver,
+        fj.substitute_verifier,
+        CASE
+          WHEN fj.substitute_author_id is not null then fj.substitute_author_id
+          ELSE fj.author_id
+        END AS active_author_id
+      FROM(
+      SELECT 
+        fj.*,
+        fb.feedback_combined,
+        COUNT(*) OVER (PARTITION BY fj.document_id) AS doc_count
+      FROM folder_join fj
+      LEFT JOIN final_feedback fb ON fj.document_version_id = fb.document_version_id
+      ) fj
+      WHERE
+        fj.last_approved_version_id = fj.document_version_id
+        OR (fj.doc_count = 1 AND fj.last_approved_version_id IS NULL)
+      )
+      SELECT
+        folder_name,
+        title,
+        concat(processing_status, ' ', document_life_cycle_status) as status,
+        document_life_cycle_status,
+        id,
+        document_id,
+        type,
+        version,
+        author,
+        verifier,
+        approver,
+        created_date,
+        sent_for_verification,
+        verified_date,
+        sent_for_approval,
+        approved,
+        next_revision_before,
+        archiver,
+        archived,
+        changelog,
+        feedback,
+        site_id,
+        folder_id,
+        substitute_author,
+        substitute_approver,
+        substitute_verifier,
+        active_author_id
+      FROM  restructure
+
+- table_name: v_roles
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for role information
+  view_definition: >
+    SELECT
+      id,
+      competence_id,
+      name as role_name
+    FROM alme_rambase_sql_prd.dbo.cmpt_roles
+
+- table_name: v_user_active_roles
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for active user roles
+  view_definition: >
+    SELECT 
+      ruc.*, 
+      cr.name as role_name 
+    FROM alme_rambase_sql_prd.dbo.cmpt_role_user_connections ruc
+    LEFT JOIN alme_rambase_sql_prd.dbo.cmpt_roles AS cr
+    ON cr.id = ruc.role_id
+
+- table_name: v_role_document_connections
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for role-document connections
+  view_definition: >
+    SELECT
+      id,
+      role_id,
+      connected_document_id as document_id
+    from alme_rambase_sql_prd.dbo.cmpt_role_document_connections
+
+
+- table_name: v_user_role_status
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for user role status
+  view_definition: >
+    SELECT
+      user_id,
+      role_id,
+      CASE
+        WHEN
+          COUNT(*) = COUNT(
+            CASE
+              WHEN reading_status = 'read' THEN 1
+            END
+          )
+        THEN
+          '1'
+        WHEN
+          1 <= COUNT(
+            CASE
+              WHEN reading_status = 'readDateExpired' THEN 1
+            END
+          )
+        THEN
+          '0'
+        WHEN
+          1 <= COUNT(
+            CASE
+              WHEN reading_status = 'readDateCloseToExpiry' THEN 1
+            END
+          )
+        THEN
+          '2'
+      END AS role_status
+    FROM
+      alme_rambase_sql_prd.dbo.competence
+    GROUP BY
+      user_id,
+      role_id
+
+- table_name: v_users
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for user information
+  view_definition: >
+    select
+      id,
+      site_id,
+      department as department_id_int,
+      first_name,
+      last_name,
+      user_name,
+      email,
+      last_login_at,
+      deleted_at,
+      archived_at,
+      archived_by_id
+    from
+      alme_rambase_sql_prd.dbo.users
+
+
+- table_name: v_document_versions
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment: View for user information
+  view_definition: >
+    WITH base_join AS (
+          SELECT
+            idv.id AS document_version_id,
+            idv.document_id,
+            idv.author_id,
+            idv.approver_id,
+            idv.verifier_id,
+            idv.version_number,
+            idv.approved_at,
+            idv.verified_at,
+            idv.changelog,
+            idv.valid_to,
+            idv.to_verification_at,
+            idv.created_at,
+            idv.to_approve_at,
+            idv.substitute_author_id,
+            idv.substitute_approver_id,
+            idv.substitute_verifier_id,
+            idv.type,
+            dl.id,
+            dl.folder_uuid,
+            dl.name,
+            dl.numeric_identifier,
+            dl.site_id,
+            dl.status_status,
+            dl.last_approved_version_id,
+            dl.last_version_id
+          FROM
+            alme_rambase_sql_prd.dbo.items_documents_versions AS idv
+              JOIN alme_rambase_sql_prd.dbo.document_list AS dl
+                ON idv.document_id = dl.id
+          ),
+          settings_join AS (
+          SELECT
+            bj.*,
+            CASE
+              WHEN CAST(get_json_object(s.values_data, '$[0]') AS INT) = -1 then 0
+              else CAST(get_json_object(s.values_data, '$[0]') AS INT)
+            END AS default_revision_noti_month_numb
+          FROM
+            base_join bj
+              LEFT JOIN alme_rambase_sql_prd.dbo.settings s
+                ON bj.site_id = s.site_id
+                and s.id LIKE '%document_default_revision_notification%'
+          ),
+          archiver_join AS (
+          SELECT
+            sj.*,
+            ldmv.archived_by_id
+          FROM
+            settings_join sj
+              LEFT JOIN alme_rambase_sql_prd.dbo.list_documents_by_maintainer_view ldmv
+                ON sj.document_version_id = ldmv.version_id
+          ),
+          feedback_join AS (
+          SELECT
+            aj.*,
+            c.user_id as user_id_comment,
+            c.message AS feedback,
+            c.created_at as feedback_created_at
+          FROM
+            archiver_join aj
+              LEFT JOIN alme_rambase_sql_prd.dbo.comments c
+                ON aj.document_version_id = c.commentable_id
+          ),
+          user_join AS (
+          SELECT
+            fj.*,
+            CONCAT(u1.first_name, ' ', u1.last_name) AS author,
+            CONCAT(u2.first_name, ' ', u2.last_name) AS approver,
+            CONCAT(u3.first_name, ' ', u3.last_name) AS verifier,
+            CONCAT(u4.first_name, ' ', u4.last_name) AS archiver,
+            CONCAT(u5.first_name, ' ', u5.last_name) AS feedbacker,
+            CONCAT(u6.first_name, ' ', u6.last_name) AS substitute_author,
+            CONCAT(u7.first_name, ' ', u7.last_name) AS substitute_approver,
+            CONCAT(u8.first_name, ' ', u8.last_name) AS substitute_verifier
+          FROM
+            feedback_join fj
+              LEFT JOIN alme_rambase_sql_prd.dbo.users u1
+                ON fj.author_id = u1.id
+              LEFT JOIN alme_rambase_sql_prd.dbo.users u2
+                ON fj.approver_id = u2.id
+              LEFT JOIN alme_rambase_sql_prd.dbo.users u3
+                ON fj.verifier_id = u3.id
+              LEFT JOIN alme_rambase_sql_prd.dbo.users u4
+                ON fj.archived_by_id = u4.id
+              LEFT JOIN alme_rambase_sql_prd.dbo.users u5
+                ON fj.user_id_comment = u5.id
+              LEFT JOIN alme_rambase_sql_prd.dbo.users u6
+                ON fj.substitute_author_id = u6.id
+              LEFT JOIN alme_rambase_sql_prd.dbo.users u7
+                ON fj.substitute_approver_id = u7.id
+              LEFT JOIN alme_rambase_sql_prd.dbo.users u8
+                ON fj.substitute_verifier_id = u8.id
+          ),
+          folder_join AS (
+          SELECT
+            uj.*,
+            f.name AS folder_name,
+            f.id as folder_id
+          FROM
+            user_join uj
+              LEFT JOIN alme_rambase_sql_prd.dbo.folders f
+                ON uj.folder_uuid = f.uuid
+          ),
+          exploded AS (
+          SELECT
+            *,
+            explode(from_json(feedback, 'STRUCT<ops: ARRAY<STRUCT<insert: STRING>>>').ops) AS op
+          FROM
+            folder_join
+          ),
+          grouped AS (
+          SELECT
+            document_version_id,
+            concat(
+              feedbacker, '\n', date_format(feedback_created_at, 'yyyy-MM-dd HH:mm'), '\n', op.insert
+            ) AS feedback_entry
+          FROM
+            exploded
+          ORDER BY
+            feedback_created_at DESC
+          ),
+          final_feedback AS (
+          SELECT
+            document_version_id,
+            concat_ws('\n\n', collect_list(feedback_entry)) AS feedback_combined
+          FROM
+            grouped
+          GROUP BY
+            document_version_id
+          ),
+          restructure AS (
+          SELECT DISTINCT
+            fj.folder_name,
+            fj.name AS title,
+            fj.document_id,
+            fj.type,
+            NULL AS status,
+            fj.numeric_identifier AS id,
+            fj.version_number AS version,
+            fj.author,
+            fj.verifier,
+            fj.approver,
+            date_format(fj.created_at, 'yyyy-MM-dd') AS created_date,
+            date_format(fj.to_verification_at, 'yyyy-MM-dd') AS sent_for_verification,
+            date_format(fj.verified_at, 'yyyy-MM-dd') AS verified_date,
+            date_format(fj.to_approve_at, 'yyyy-MM-dd') AS sent_for_approval,
+            date_format(fj.approved_at, 'yyyy-MM-dd') AS approved,
+            date_format(fj.valid_to, 'yyyy-MM-dd') AS next_revision_before,
+            fj.archiver,
+            CASE
+              WHEN fj.archiver IS NOT NULL THEN TRUE
+              ELSE FALSE
+            END AS archived,
+            fj.changelog,
+            fj.feedback_combined AS feedback,
+            fj.last_approved_version_id,
+            fj.status_status as processing_status,
+            fj.default_revision_noti_month_numb,
+            CASE
+              WHEN fj.last_approved_version_id IS NULL THEN 'grey'
+              WHEN fj.valid_to IS NULL THEN 'green'
+              WHEN current_timestamp() > fj.valid_to THEN 'red'
+              WHEN
+                current_timestamp() > add_months(fj.valid_to, -fj.default_revision_noti_month_numb)
+              THEN
+                'yellow'
+              ELSE 'green'
+            END AS document_life_cycle_status,
+            fj.folder_id,
+            fj.site_id,
+            fj.substitute_author,
+            fj.substitute_approver,
+            fj.substitute_verifier,
+            CASE
+              WHEN fj.substitute_author_id is not null then fj.substitute_author_id
+              ELSE fj.author_id
+            END AS active_author_id
+          FROM(
+          SELECT 
+            fj.*,
+            fb.feedback_combined,
+            COUNT(*) OVER (PARTITION BY fj.document_id) AS doc_count
+          FROM folder_join fj
+          LEFT JOIN final_feedback fb ON fj.document_version_id = fb.document_version_id
+          ) fj
+          )
+          SELECT
+            folder_name,
+            title,
+            concat(processing_status, ' ', document_life_cycle_status) as status,
+            document_life_cycle_status,
+            id,
+            document_id,
+            type,
+            version,
+            author,
+            verifier,
+            approver,
+            created_date,
+            sent_for_verification,
+            verified_date,
+            sent_for_approval,
+            approved,
+            next_revision_before,
+            archiver,
+            archived,
+            changelog,
+            feedback,
+            site_id,
+            folder_id,
+            substitute_author,
+            substitute_approver,
+            substitute_verifier,
+            active_author_id
+          FROM  restructure
+
+- table_name: v_woc_observed
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment:
+  view_definition: >
+      SELECT
+          uwoc.woc_id,
+          uwoc.user_id AS observed_id,
+          CONCAT(u2.first_name, ' ', u2.last_name) AS observed,
+          d.name as department_name
+      FROM alme_rambase_sql_prd.dbo.user_woc uwoc
+      LEFT JOIN alme_rambase_sql_prd.dbo.users u2
+      ON uwoc.user_id = u2.id
+     LEFT JOIN alme_rambase_sql_prd.dbo.cmpt_user_company_branch_connection ucbc
+      ON uwoc.user_id = ucbc.user_id
+      LEFT JOIN alme_rambase_sql_prd.dbo.cmpt_company_branches ccb
+      ON ucbc.company_branch_id = ccb.id
+      LEFT JOIN alme_rambase_sql_prd.dbo.cmpt_departments d
+      ON ccb.department_id = d.id
+
+- table_name: v_woc_elements
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment:
+  view_definition: >
+    SELECT 
+        *
+      FROM alme_rambase_sql_prd.dbo.woc_elements
+
+- table_name: v_wocs
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment:
+  view_definition: >
+    WITH wocs AS (
+        SELECT
+          woc.*,
+          CONCAT(u1.first_name, ' ', u1.last_name) AS observer
+        FROM
+          alme_rambase_sql_prd.dbo.wocs woc
+            LEFT JOIN alme_rambase_sql_prd.dbo.users u1
+              ON woc.observer_id = u1.id
+      )
+      SELECT 
+        * 
+      FROM wocs;
+
+- table_name: v_action_woc_element
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment:
+  view_definition: >
+    SELECT
+      *
+    FROM alme_rambase_sql_prd.dbo.action_woc_element
+    
+
+- table_name: v_item_actions
+  uc_catalog: alme_safety_ambs_prd
+  uc_schema: rambase
+  table_comment:
+  view_definition: >
+    SELECT
+      *
+    FROM alme_rambase_sql_prd.dbo.items_actions
